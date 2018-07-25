@@ -43,16 +43,16 @@ async def monitor_hypo_group():
             for annotation_row in results["rows"]:
                 if annotation_row["id"] in in_memory:
                     continue
-                msg = "{} made a new annotation on {} ({})".format(
-                    annotation_row["user"].split(":")[1],
-                    annotation_row["document"]["title"][0],
-                    annotation_row["links"]["html"])
-                await client.send_message(channel, msg)
+                else:
+                    msg = build_message(annotation_row)
+                    await client.send_message(channel, msg)
         for annotation_row in results["rows"]:
             if annotation_row["id"] in in_memory:
                 continue
-            in_memory.append(annotation_row["id"])
-            if len(in_memory) > 10: # Limit held ID's in memory to the last ten entries
+            else:
+                in_memory.append(annotation_row["id"])
+            #TODO: Figure out why this had double-report issues when recording 10 id's
+            if len(in_memory) > 100: # Limit held ID's in memory to the last ten entries
                 del(in_memory[0])
         with open("processed.json", "w") as outfile:
             json.dump(in_memory, outfile)
@@ -64,5 +64,37 @@ async def on_message(message):
     if message.content.startswith('!register'):
         await client.send_message(message.channel, "Not implemented.")
 
+def build_message(annotation_row):
+    if annotation_row["text"]:
+        msg_base = "{} made a new annotation on {} ({})\n```{}"
+    else:
+        msg_base = "{} made a new highlight on {} ({})\n```{}"
+
+    if len(annotation_row["text"]) > 325 or len(extract_exact(annotation_row)) > 325:
+        msg_base = msg_base + "...```"
+    else:
+        msg_base = msg_base + "```"
+
+    if annotation_row["text"]:
+        preview = annotation_row["text"]
+    else:
+        preview = extract_exact(annotation_row)
+
+    return msg_base.format(
+        annotation_row["user"].split(":")[1],
+        annotation_row["document"]["title"][0],
+        annotation_row["links"]["html"],
+        preview)
+    
+def extract_exact(annotation_row):
+    for selector in annotation_row["target"][0]["selector"]:
+        try:
+            return selector["exact"]
+        except KeyError:
+            continue
+    return None
+        
 client.loop.create_task(monitor_hypo_group())
 client.run(config["discord-api-key"])
+
+
