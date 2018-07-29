@@ -8,7 +8,9 @@ import json
 
 parser = argparse.ArgumentParser()
 parser.add_argument("config_file")
+parser.add_argument("--test", "-t", help="Turn on debug features and commands.")
 arguments = parser.parse_args()
+
 
 
 with open(arguments.config_file) as infile:
@@ -40,7 +42,7 @@ async def monitor_hypo_group():
                                limit=10)
             )
         for channel in channels:
-            for annotation_row in results["rows"]:
+            for annotation_row in reversed(results["rows"]):
                 if annotation_row["id"] in in_memory:
                     continue
                 else:
@@ -87,6 +89,11 @@ def build_message(annotation_row):
         preview)
     
 def extract_exact(annotation_row):
+    try:
+        annotation_row["target"][0]["selector"]
+    except KeyError as e:
+        print(annotation_row)
+        return "<text not available>"
     for selector in annotation_row["target"][0]["selector"]:
         try:
             return selector["exact"]
