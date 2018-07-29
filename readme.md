@@ -7,6 +7,7 @@ This is a [Discord](https://discordapp.com/) bot that tracks and reports activit
 Git clone this repository. Then create a virtual environment and install the following libraries:
 
 [python-hypothesis](https://github.com/chaselgrove/python-hypothesis)
+
 [discord.py](https://github.com/Rapptz/discord.py)
 
 Unfortunately discord.py is designed to work with python3 while python-hypothesis
