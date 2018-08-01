@@ -1,63 +1,29 @@
+from hypothesis_tracker import HypothesisTracker
 import argparse
-import discord
+import time
+import threading
 import asyncio
+import discord
 import h_annot
-import sqlite3
 import json
-
-
-parser = argparse.ArgumentParser()
-parser.add_argument("config_file")
-parser.add_argument("--test", "-t", help="Turn on debug features and commands.")
-arguments = parser.parse_args()
-
-
-
-with open(arguments.config_file) as infile:
-    try:
-        config = json.load(infile)
-    except IOError:
-        print("Couldn't find the config file, make sure you have config.json in the bot directory!")
-        exit()
 
 client = discord.Client()
 
-
-
 async def monitor_hypo_group():
-    # Track processed annotation ID's so we don't double report
-    try:
-        with open("processed.json") as infile:
-            in_memory = json.load(infile)
-    except IOError:
-        in_memory = [] 
+    
     await client.wait_until_ready()
     channels = []
     for channel_id in config["channels"]:
         channels.append(discord.Object(id=channel_id))
     while not client.is_closed:
-        results = json.loads(
-            h_annot.api.search(config["hypo-api-key"],
-                               group=config["hypo-group-id"],
-                               limit=10)
-            )
+        if not results_lock.acquire(timeout=3):
+            await asyncio.sleep(30)
+            continue
         for channel in channels:
-            for annotation_row in reversed(results["rows"]):
-                if annotation_row["id"] in in_memory:
-                    continue
-                else:
-                    msg = build_message(annotation_row)
-                    await client.send_message(channel, msg)
-        for annotation_row in results["rows"]:
-            if annotation_row["id"] in in_memory:
-                continue
-            else:
-                in_memory.append(annotation_row["id"])
-            #TODO: Figure out why this had double-report issues when recording 10 id's
-            if len(in_memory) > 100: # Limit held ID's in memory to the last ten entries
-                del(in_memory[0])
-        with open("processed.json", "w") as outfile:
-            json.dump(in_memory, outfile)
+            for annotation_row in results:
+                msg = build_message(annotation_row)
+                await client.send_message(channel, msg)
+        results_lock.release()
         await asyncio.sleep(300)
 
 @client.event
@@ -72,6 +38,7 @@ def build_message(annotation_row):
     else:
         msg_base = "{} made a new highlight on {} ({})\n```{}"
 
+    #TODO: Fix the fact that this usually evaluates true because annotations reply to long texts
     if len(annotation_row["text"]) > 325 or len(extract_exact(annotation_row)) > 325:
         msg_base = msg_base + "...```"
     else:
@@ -100,8 +67,29 @@ def extract_exact(annotation_row):
         except KeyError:
             continue
     return None
-        
-client.loop.create_task(monitor_hypo_group())
-client.run(config["discord-api-key"])
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config_file")
+    parser.add_argument("--test", "-t", help="Turn on debug features and commands.")
+    arguments = parser.parse_args()
+
+    results = []
+    results_lock = threading.Lock()
+
+    with open(arguments.config_file) as infile:
+        try:
+            config = json.load(infile)
+        except IOError:
+            print("Couldn't find the config file, make sure you have config.json in the bot directory!")
+            exit()
+
+    
+    hypo_track = HypothesisTracker(results, results_lock, config["hypo-api-key"], config["hypo-group-id"])
+    hypo_thread = threading.Thread(target=hypo_track.get_loop)
+    hypo_thread.start()
+
+    client.loop.create_task(monitor_hypo_group())
+    client.run(config["discord-api-key"])
 
 
